@@ -63,7 +63,7 @@ def get_args(command_line_arguments):
     parser.add_argument("-nf", "--num_ngrams_fdg", type=int, default=250,
                         help="number of ngrams to return for fdg graph")
 
-    parser.add_argument("-ds", "--doc_source", default='USPTO-random-1000.pkl.bz2', help="the doc source to process")
+    parser.add_argument("-ds", "--doc_source", default='USPTO-random-100000.pkl.bz2', help="the doc source to process")
     parser.add_argument("-fs", "--focus_source", default='USPTO-random-10000.pkl.bz2',
                         help="the doc source for the focus function")
 
@@ -217,14 +217,14 @@ def output_tfidf(tfidf_base_filename, tfidf):
         patent_ids = pd.Series(None, index=np.arange(len(tfidf.feature_names)))
 
 
-    tfidf_data = [tfidf.tfidf_matrix, tfidf.feature_names, publication_week_dates, patent_ids]
+    tfidf_data = [tfidf.tfidf_matrix, tfidf.ngram_counts, tfidf.feature_names, publication_week_dates, patent_ids]
     tfidf_filename = os.path.join('outputs', 'tfidf', tfidf_base_filename + '-tfidf.pkl.bz2')
     os.makedirs(os.path.dirname(tfidf_filename), exist_ok=True)
     with bz2.BZ2File(tfidf_filename, 'wb') as pickle_file:
         pickle.dump(tfidf_data, pickle_file)
 
     term_present_matrix = tfidf.tfidf_matrix > 0
-    term_present_data = [term_present_matrix, tfidf.feature_names, publication_week_dates, patent_ids]
+    term_present_data = [term_present_matrix, tfidf.ngram_counts, tfidf.feature_names, publication_week_dates, patent_ids]
     term_present_filename = os.path.join('outputs', 'tfidf', tfidf_base_filename + '-term_present.pkl.bz2')
     os.makedirs(os.path.dirname(term_present_filename), exist_ok=True)
     with bz2.BZ2File(term_present_filename, 'wb') as pickle_file:

@@ -194,6 +194,10 @@ class TFIDF:
         return self.__tfidf_matrix
 
     @property
+    def ngram_counts(self):
+        return self.__ngram_counts
+
+    @property
     def vectorizer(self):
         return self.__vectorizer
 
