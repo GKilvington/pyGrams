@@ -8,7 +8,7 @@ import sys
 import numpy as np
 import calendar
 
-from pandas import Timestamp, ExcelWriter
+from pandas import Timestamp, ExcelWriter, Timedelta
 
 from scripts.algorithms.term_focus import TermFocus
 from scripts.algorithms.tfidf import LemmaTokenizer, TFIDF
@@ -74,6 +74,9 @@ def get_args(command_line_arguments):
     parser.add_argument("-yt", "--year_to", default=None, help="The last year for the document cohort in YYYY format")
     parser.add_argument("-mt", "--month_to", default=None, help="The last month for the document cohort in MM format")
 
+    parser.add_argument("-nt", "--new_terms", default=False, action="store_true", help="Detect new terms")
+    parser.add_argument("-mo", "--months", default=1, help="Number of months to detect new terms over")
+
     parser.add_argument("-np", "--num_ngrams_report", type=int, default=250,
                         help="number of ngrams to return for report")
     parser.add_argument("-nd", "--num_ngrams_wordcloud", type=int, default=250,
@@ -93,6 +96,8 @@ def get_args(command_line_arguments):
     parser.add_argument("-wn", "--wordcloud_name", default=os.path.join('outputs', 'wordclouds',
                                                                         'wordcloud_tech.png'),
                         help="wordcloud filename")
+    parser.add_argument("-nn", "--new_term_report_name", default=os.path.join('outputs', 'reports', 'new_term_report_tech.txt'),
+                        help="new term report filename")
     parser.add_argument("-wt", "--wordcloud_title", default='tech terms', help="wordcloud title")
 
     parser.add_argument("-tn", "--table_name", default=os.path.join('outputs', 'table', 'table.xlsx'),
@@ -104,10 +109,19 @@ def get_args(command_line_arguments):
     return args
 
 
-def get_tfidf(args, pickle_file_name, df=None):
-    date_from = year2pandas_earliest_date(args.year_from, args.month_from)
-    date_to = year2pandas_latest_date(args.year_to, args.month_to)
-    if df is None or args.year_from is not None or args.year_to is not None:
+def get_tfidf(args, pickle_file_name, df=None, subset=False, new_terms=False, months=1):
+    if subset is False:
+        date_from = year2pandas_earliest_date(args.year_from, args.month_from)
+        date_to = year2pandas_latest_date(args.year_to, args.month_to)
+    else:
+        days = int(months) * 31
+        if new_terms is False:
+            date_from = year2pandas_earliest_date(args.year_from, args.month_from)
+            date_to = year2pandas_latest_date(args.year_to, args.month_to) - pd.Timedelta(days=days)
+        else:
+            date_to = year2pandas_latest_date(args.year_to, args.month_to)
+            date_from = date_to - pd.Timedelta(days=days)
+    if df is None or args.year_from is not None or args.year_to is not None or subset is True:
         df = PatentsPickle2DataFrame(pickle_file_name, date_from=date_from, date_to=date_to).data_frame
     header_filter_cols = [x.strip() for x in args.filter_columns.split(",")] if args.filter_columns is not None else []
     header_lists = []
@@ -228,6 +242,32 @@ def output_tfidf(tfidf_base_filename, tfidf, ngram_multiplier, num_ngrams, pick,
     with bz2.BZ2File(term_present_filename, 'wb') as pickle_file:
         pickle.dump(term_present_data, pickle_file)
 
+def find_new_terms(args, doc_source_file_name, df):
+    tfidf_old, doc_set_old = get_tfidf(args, doc_source_file_name, df=df, subset=True, months=args.months)
+    tfidf_new, doc_set_new = get_tfidf(args, doc_source_file_name, df=df, subset=True, new_terms=True, months=args.months)
+
+    new_term_index = []
+    for i in range(0, len(tfidf_new.feature_names)):
+        if tfidf_new.feature_names[i] not in tfidf_old.feature_names:
+            new_term_index.append(i)
+    new_term_index_tfidf = [x - 1 for x in new_term_index]
+    tfidf_new_terms = tfidf_new.tfidf_matrix[:, new_term_index_tfidf]
+
+    new_terms = []
+    [new_terms.append(tfidf_new.feature_names[i]) for i in new_term_index]
+    term_score = [tfidf_new_terms[:, x].sum() for x in range(0, tfidf_new_terms.shape[1])]
+    term_score_df = pd.DataFrame({'new_terms': new_terms, 'term_score': term_score}).sort_values(by=['term_score'], ascending=False)
+
+    with open(args.new_term_report_name, 'w') as file:
+        counter = 1
+        for index, row in term_score_df.iterrows():
+            file.write(f' {row.new_terms} {row.term_score}\n')
+            print(f'{counter}. {row.new_terms} {row.term_score}')
+            counter += 1
+            if counter > args.num_ngrams_report:
+                break
+    exit(0)
+
 
 def main():
     paths = [os.path.join('outputs', 'reports'), os.path.join('outputs', 'wordclouds'),
@@ -278,7 +318,11 @@ def main():
         import nltk
         nltk.data.path.append(args.nltk_path)
 
-    tfidf, doc_set = get_tfidf(args, doc_source_file_name, df=df)
+    if args.new_terms is True:
+        print(f'Finding new terms from {args.months} months before {args.month_to}-{args.year_to}')
+        find_new_terms(args, doc_source_file_name, df=df)
+    else:
+        tfidf, doc_set = get_tfidf(args, doc_source_file_name, df=df)
 
     newtfidf = None
     if args.focus or args.output == 'table':
@@ -304,3 +348,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
